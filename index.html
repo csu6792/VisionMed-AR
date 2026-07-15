@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VisionMed AR AI - 綜合醫學與手術教學體驗</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; background-color: #f0fdfa; }
+        
+        /* Model-viewer 樣式 */
+        model-viewer::part(default-progress-bar) { display: none; }
+        model-viewer { width: 100%; height: 100%; background-color: transparent; --poster-color: transparent; }
+        
+        /* 捲軸樣式 */
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #94a3b8; border-radius: 20px; }
+        
+        /* ThreeJS 容器 */
+        #room-3d-container, #procedural-3d-container { width: 100%; height: 100%; overflow: hidden; border-radius: 1rem; position: relative; }
+        #room-3d-container canvas, #procedural-3d-container canvas { display: block; outline: none; }
+        
+        /* Loading 動畫 */
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #0d9488; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Toast 提示框動畫 */
+        @keyframes slideUp { from { transform: translate(-50%, 100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+        .toast-enter { animation: slideUp 0.3s ease-out forwards; }
+
+        .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.5); }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <header class="bg-teal-600 text-white border-b border-teal-700 py-4 px-6 md:px-12 flex justify-between items-center sticky top-0 z-40 shadow-md">
+        <div class="text-2xl font-bold tracking-tight flex items-center space-x-2">
+            <span class="bg-white text-teal-600 px-2.5 py-1 rounded-lg text-lg font-black"><i class="fa-solid fa-microscope"></i></span>
+            <span>VisionMed AR AI<span class="text-teal-200 text-sm ml-2 font-normal hidden sm:inline">綜合醫學教育平台</span></span>
+        </div>
+        <div class="flex items-center space-x-3">
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-800 text-teal-100 border border-teal-500">
+                <i class="fa-solid fa-bolt text-yellow-300 mr-1"></i> VisionMed AR
+            </span>
+        </div>
+    </header>
+
+    <main class="flex-grow container mx-auto px-4 py-6 max-w-7xl">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <div class="lg:col-span-5 flex flex-col space-y-6">
+                <!-- 分頁按鈕區 -->
+                <div class="bg-white p-1.5 rounded-xl shadow-sm border border-teal-100 flex space-x-1">
+                    <button id="tab-catalog" class="flex flex-1 items-center justify-center py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-all bg-teal-600 text-white shadow-sm">
+                        <i class="fa-solid fa-layer-group mr-1.5"></i> 模型展示
+                    </button>
+                    <button id="tab-ai-id" class="flex flex-1 items-center justify-center py-2.5 text-xs sm:text-sm font-medium rounded-lg transition-all text-slate-500 hover:text-slate-800 hover:bg-teal-50">
+                        <i class="fa-solid fa-camera mr-1.5"></i> 拍照辨識
+                    </button>
+                    <button id="tab-planner" class="flex flex-1 items-center justify-center py-2.5 text-xs sm:text-sm font-medium rounded-lg transition-all text-slate-500 hover:text-slate-800 hover:bg-teal-50">
+                        <i class="fa-solid fa-map-location-dot mr-1.5"></i> 空間佈置
+                    </button>
+                </div>
+
+                <div id="panel-catalog" class="glass-panel p-6 rounded-2xl shadow-sm space-y-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-900 mb-1">醫學院解剖與設備展示</h2>
+                        <p class="text-xs text-slate-500">點擊下方人體模型或設備，進行高畫質預覽與 AR 互動。</p>
+                    </div>
+                    <div id="catalog-list-container" class="space-y-3 max-h-[450px] overflow-y-auto pr-1 custom-scrollbar"></div>
+                </div>
+
+                <div id="panel-ai-id" class="hidden glass-panel p-6 rounded-2xl shadow-sm space-y-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+                            <i class="fa-solid fa-wand-magic-sparkles text-teal-500"></i> AI 器械智能辨識
+                        </h2>
+                        <p class="text-xs text-slate-500 mb-4">上傳或拍下手邊的手術工具，系統將為您生成對應的 3D 結構與安全指引。</p>
+                        
+                        <label class="cursor-pointer bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 px-4 rounded-xl text-center w-full flex items-center justify-center gap-2 transition-transform hover:-translate-y-0.5">
+                            <i class="fa-solid fa-cloud-arrow-up text-lg"></i>
+                            <span>拍照 / 選擇圖片</span>
+                            <input type="file" id="imageInput" accept="image/*" capture="environment" class="hidden" />
+                        </label>
+                        
+                        <!-- 新增臨時測試用文字輸入框 -->
+                        <div class="mt-2 flex gap-2">
+                            <input type="text" id="textInputTest" placeholder="測試輸入 (例如: 手術刀)" class="flex-grow p-3 border border-teal-300 rounded-xl text-sm focus:outline-none focus:border-teal-500 bg-white/50 backdrop-blur-sm">
+                            <button id="btnTextTest" class="bg-slate-700 hover:bg-slate-800 text-white px-5 py-3 rounded-xl text-sm font-semibold transition shadow-sm whitespace-nowrap">文字測試</button>
+                        </div>
+                    </div>
+
+                    <div id="imagePreviewContainer" class="hidden relative rounded-xl overflow-hidden border-2 border-dashed border-teal-300 bg-slate-50 aspect-square flex items-center justify-center">
+                        <img id="imagePreview" src="" alt="預覽圖片" class="max-w-full max-h-full object-contain">
+                        <div id="loadingOverlay" class="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center hidden">
+                            <div class="loader mb-3"></div>
+                            <p class="text-teal-700 font-medium animate-pulse">Gemini 正在分析特徵...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="panel-planner" class="hidden glass-panel p-6 rounded-2xl shadow-sm space-y-5">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-900 mb-1">手術室 2D/3D 配置模擬</h2>
+                        <p class="text-xs text-slate-500">選擇模型並拖曳配置，點擊進入 3D 查看整體動線。</p>
+                    </div>
+
+                    <div>
+                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">點擊添加至場景</h3>
+                        <div id="planner-furniture-selector" class="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto custom-scrollbar p-1"></div>
+                    </div>
+
+                    <div id="blueprint-container" class="relative">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center">
+                                <i class="fa-solid fa-compass text-teal-400 mr-1"></i> 2D 平面圖 (可滑鼠拖曳物件)
+                            </span>
+                        </div>
+                        <div class="relative bg-slate-900 rounded-xl overflow-hidden border border-slate-800 flex justify-center p-2">
+                            <canvas id="blueprint-canvas" width="360" height="260" class="bg-slate-950 rounded-lg shadow-inner cursor-crosshair"></canvas>
+                        </div>
+                        
+                        <button id="btn-render-3d" class="mt-3 w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all flex items-center justify-center space-x-2">
+                            <i class="fa-solid fa-cube text-teal-400"></i>
+                            <span>進入 3D 手術模擬空間</span>
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="lg:col-span-7 flex flex-col space-y-6">
+                <div id="display-card" class="bg-white rounded-3xl shadow-md overflow-hidden border border-teal-100 flex flex-col h-full min-h-[600px]">
+                    
+                    <!-- 上半部：3D 視覺區 -->
+                    <div id="viewer-area" class="w-full p-2 bg-gradient-to-b from-slate-50 to-slate-100 relative h-[350px] md:h-[400px] border-b border-slate-200">
+                        <div class="absolute top-4 left-4 z-10 flex space-x-2">
+                            <span id="product-badge" class="bg-teal-600 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-sm">
+                                載入中...
+                            </span>
+                            <button id="btn-back-single" class="hidden bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-sm flex items-center space-x-1 transition">
+                                <i class="fa-solid fa-arrow-left"></i>
+                                <span>返回單一物件</span>
+                            </button>
+                        </div>
+
+                        <!-- 模式 A: 內建高品質模型的 Model Viewer -->
+                        <div id="view-model-viewer" class="relative w-full h-full flex items-center justify-center">
+                            <model-viewer 
+                                id="model-viewer"
+                                src="" ar ar-modes="webxr scene-viewer quick-look" 
+                                ar-scale="auto" ar-placement="floor" camera-controls auto-rotate 
+                                shadow-intensity="1.5" environment-image="neutral" exposure="1.0">
+                            </model-viewer>
+                        </div>
+
+                        <!-- 模式 B: Gemini 辨識生成的程序化 3D 結構 -->
+                        <div id="view-procedural" class="hidden relative w-full h-full flex items-center justify-center bg-slate-900 rounded-2xl overflow-hidden">
+                            <div id="procedural-3d-container"></div>
+                            <div class="absolute bottom-2 right-2 text-white/50 text-xs flex items-center gap-1">
+                                <i class="fa-solid fa-hand-pointer"></i> 可拖曳旋轉
+                            </div>
+                        </div>
+
+                        <!-- 模式 C: 3D 手術室佈置場景 -->
+                        <div id="view-room-3d" class="hidden relative w-full h-full flex items-center justify-center bg-slate-900 rounded-2xl overflow-hidden">
+    
+							<div id="room-3d-container" class="w-full h-full"></div>
+							
+							<div id="delete-btn-container" style="display: none;" class="absolute top-4 right-4 z-50">
+								<button onclick="deleteSelected()" class="bg-red-500/90 hover:bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg transition flex items-center gap-2 backdrop-blur-sm">
+									<i class="fas fa-trash-alt"></i> 刪除選取物件
+								</button>
+							</div>
+							<div class="absolute bottom-2 right-2 text-white/50 text-xs flex items-center gap-1 z-10">
+								<i class="fa-solid fa-hand-pointer"></i> 空間自由檢視
+							</div>
+						</div>
+                    </div>
+
+                    <div id="info-area" class="w-full p-6 md:p-8 flex flex-col justify-between flex-grow">
+                        <div id="info-content">
+                            <div id="product-category" class="uppercase tracking-wider text-xs text-teal-600 font-black mb-1">
+                                狀態指示
+                            </div>
+                            <h1 id="product-title" class="text-2xl md:text-3xl font-extrabold text-slate-900 mb-3">
+                                等待操作指令
+                            </h1>
+                            <p id="product-description" class="text-slate-600 text-sm mb-4 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                請從左側面板選擇「模型展廳」檢視人體結構與設備，或使用「拍照辨識」上傳工具圖片。
+                            </p>
+                            
+                            <!-- Gemini 辨識專用額外警告區塊 (預設隱藏) -->
+                            <div id="gemini-warning" class="hidden bg-orange-50 text-orange-800 p-3 rounded-lg text-sm flex gap-2 items-start mt-2 border border-orange-100">
+                                <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+                                <p id="gemini-warning-text"><strong>安全提示：</strong> 辨識結果僅供教學參考。</p>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 pt-4 border-t border-slate-100">
+                            <button id="main-action-btn" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 px-6 rounded-xl shadow-md transition duration-200">
+                                <i class="fa-brands fa-unity mr-2"></i> 啟動 AR 實境投影
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Toast 提示 -->
+    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 backdrop-blur text-white px-6 py-3 rounded-full shadow-2xl text-sm font-medium hidden flex items-center gap-2"></div>
+
+    <script>
+        const GEMINI_API_KEY = ""; // Canvas 環境會自動注入
+        
+        const dom = {
+            tabs: { catalog: document.getElementById('tab-catalog'), aiId: document.getElementById('tab-ai-id'), planner: document.getElementById('tab-planner') },
+            panels: { catalog: document.getElementById('panel-catalog'), aiId: document.getElementById('panel-ai-id'), planner: document.getElementById('panel-planner') },
+            views: { modelViewer: document.getElementById('view-model-viewer'), procedural: document.getElementById('view-procedural'), room3d: document.getElementById('view-room-3d') },
+            
+            info: {
+                title: document.getElementById('product-title'), desc: document.getElementById('product-description'),
+                category: document.getElementById('product-category'), badge: document.getElementById('product-badge'),
+                geminiWarning: document.getElementById('gemini-warning'), warningText: document.getElementById('gemini-warning-text'),
+                btnBackSingle: document.getElementById('btn-back-single'), mainBtn: document.getElementById('main-action-btn')
+            },
+            
+            catalogList: document.getElementById('catalog-list-container'),
+            plannerSelector: document.getElementById('planner-furniture-selector'),
+            
+            // Gemini ID 元素
+            imageInput: document.getElementById('imageInput'),
+            imagePreview: document.getElementById('imagePreview'),
+            imagePreviewContainer: document.getElementById('imagePreviewContainer'),
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            
+            // 臨時文字測試元素
+            textInputTest: document.getElementById('textInputTest'),
+            btnTextTest: document.getElementById('btnTextTest'),
+            
+            // Planner 元素
+            canvas: document.getElementById('blueprint-canvas'),
+            ctx: document.getElementById('blueprint-canvas') ? document.getElementById('blueprint-canvas').getContext('2d') : null,
+            btnRender3d: document.getElementById('btn-render-3d'),
+            
+            // Model Viewer 元素
+            mvElem: document.getElementById('model-viewer')
+        };
+
+        // 系統狀態
+        let currentMode = 'catalog'; // catalog, ai-id, planner
+        let activeCatalogId = null;
+        let currentLayout = []; // Planner 的物件陣列
+        let isDraggingBlueprint = false;
+        let selectedLayoutItemIndex = null;
+        let dragOffsetX = 0, dragOffsetY = 0;
+		
+		let selectedItemLayoutIndex = -1; // 用來記錄目前選取的物件在 currentLayout 中的索引
+
+        const catalogData = [
+            {
+				id: "surgical_scissors",
+				name: "精細手術剪",
+				category: "手術器械",
+				badge: "剪切工具",
+				description: "專為細緻組織修剪與縫線切割設計，刀刃鋒利且結構精巧，常用於精細外科手術。",
+				glbUrl: "Scissors.glb", // 佔位模型
+				realW: 11.5, // 典型精細剪長度約 11 ~ 12 公分
+				realD: 4.5,  // 手指環部分展開後的寬度約 4.5 公分
+				color: "#e2e8f0"
+			},
+            // 以下為新增的 AI 可對應器械
+            {
+				id: "scalpel_no10_handle3", 
+				name: "3號刀柄配10號手術刀片", 
+				category: "手術器械", 
+				badge: "切開工具",
+				description: "臨床最常見的組合。3號手術刀柄搭配10號弧形刀片，專用於皮膚與組織的大面積切開。",
+				glbUrl: "Scalpel.glb", // 佔位模型
+				realW: 14.5, // 3號刀柄加上10號刀片總長約 14.5 ~ 15 公分
+				realD: 1.2,  // 刀柄最寬處約 1.2 ~ 1.3 公分，厚度約 0.2 ~ 0.3 公分
+				color: "#e2e8f0" // 修正為更接近不鏽鋼金屬光澤的冷銀灰色調
+			},
+            {
+				id: "surgical_forceps",
+				name: "標準外科鑷子",
+				category: "手術器械",
+				badge: "夾取工具",
+				description: "醫療外科最基礎的夾取工具，用於固定或夾取組織，確保操作時的穩定與精準。",
+				glbUrl: "Forceps.glb", // 佔位模型
+				realW: 12.5, // 標準鑷子長度約 12.5 公分
+				realD: 0.8,  // 閉合狀態下主體寬度約 0.8 公分
+				color: "#e2e8f0"
+			}
+        ];
+		
+		window.deleteSelected = function() {
+			if (selectedItemLayoutIndex > -1) {
+				// 1. 從陣列中移除該物件
+				currentLayout.splice(selectedItemLayoutIndex, 1);
+				
+				// 2. 隱藏刪除按鈕並重設選取狀態
+				selectedItemLayoutIndex = -1;
+				document.getElementById('delete-btn-container').style.display = 'none';
+				
+				// 3. 重新渲染 2D 藍圖與 3D 空間 (確保兩個視圖同步更新)
+				drawBlueprint();
+				renderRoom3D();
+				
+				// 4. 顯示提示訊息 (假設你的系統有這個功能)
+				if(typeof showToast === 'function') {
+					showToast("物件已刪除", "success");
+				}
+			}
+		};
+
+        function showToast(msg, type = 'info') {
+            const toast = document.getElementById('toast');
+            let icon = '<i class="fa-solid fa-circle-info text-blue-400"></i>';
+            if(type === 'success') icon = '<i class="fa-solid fa-circle-check text-green-400"></i>';
+            if(type === 'error') icon = '<i class="fa-solid fa-triangle-exclamation text-red-400"></i>';
+            
+            toast.innerHTML = `${icon} <span>${msg}</span>`;
+            toast.classList.remove('hidden');
+            toast.classList.add('toast-enter');
+            setTimeout(() => { toast.classList.remove('toast-enter'); toast.classList.add('hidden'); }, 3000);
+        }
+
+        function switchTab(tabName) {
+            currentMode = tabName;
+            // 處理按鈕樣式
+            ['catalog', 'aiId', 'planner'].forEach(key => {
+                const btn = dom.tabs[key];
+                if(key === tabName) {
+                    btn.className = "flex flex-1 items-center justify-center py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-all bg-teal-600 text-white shadow-sm";
+                    dom.panels[key].classList.remove('hidden');
+                } else {
+                    btn.className = "flex flex-1 items-center justify-center py-2.5 text-xs sm:text-sm font-medium rounded-lg transition-all text-slate-500 hover:text-slate-800 hover:bg-teal-50";
+                    dom.panels[key].classList.add('hidden');
+                }
+            });
+
+            // 處理右側視圖切換
+            dom.info.btnBackSingle.classList.add('hidden');
+            if(tabName === 'catalog') {
+                if(activeCatalogId) loadCatalogItem(activeCatalogId);
+                else loadCatalogItem(catalogData[0].id);
+            } else if (tabName === 'aiId') {
+                if(dom.info.title.innerText === "等待操作指令" || currentMode !== 'aiId') {
+                    updateInfoPanel("等待影像輸入", "請拍照或上傳器械圖片，AI 將自動辨識並生成 3D 結構。", "Gemini Vision", "待命中");
+                }
+                switchView('procedural');
+                buildProceduralModel('idle'); // 新增：顯示待機掃描圖形，避免黑畫面
+                dom.info.mainBtn.style.display = 'none'; // 程序化模型暫不支援 WebXR
+            } else if (tabName === 'planner') {
+                switchView('room3d'); 
+                updateInfoPanel("手術室平面配置", "在左側拖曳安排物件位置。點擊「進入 3D」生成虛擬場景。", "空間模擬", "配置中");
+                drawBlueprint();
+                dom.info.mainBtn.style.display = 'none';
+            }
+        }
+
+        function switchView(viewName) {
+			dom.views.modelViewer.classList.add('hidden');
+			dom.views.procedural.classList.add('hidden');
+			dom.views.room3d.classList.add('hidden');
+			
+			if(viewName === 'modelViewer') dom.views.modelViewer.classList.remove('hidden');
+			
+			if(viewName === 'procedural') {
+				dom.views.procedural.classList.remove('hidden');
+				// 使用雙重 requestAnimationFrame，確保瀏覽器已完全解除了 hidden 並完成排版
+				requestAnimationFrame(() => {
+					requestAnimationFrame(() => {
+						if(procCamera && procRenderer) {
+							const c1 = document.getElementById('procedural-3d-container');
+							procCamera.aspect = c1.clientWidth / c1.clientHeight;
+							procCamera.updateProjectionMatrix();
+							procRenderer.setSize(c1.clientWidth, c1.clientHeight);
+						}
+					});
+				});
+			}
+			
+			if(viewName === 'room3d') {
+				dom.views.room3d.classList.remove('hidden');
+				requestAnimationFrame(() => {
+					requestAnimationFrame(() => {
+						if(roomCamera && roomRenderer) {
+							const c2 = document.getElementById('room-3d-container');
+							roomCamera.aspect = c2.clientWidth / c2.clientHeight;
+							roomCamera.updateProjectionMatrix();
+							roomRenderer.setSize(c2.clientWidth, c2.clientHeight);
+						}
+					});
+				});
+			}
+		}
+
+        function updateInfoPanel(title, desc, category, badge, warningMsg = null) {
+            dom.info.title.innerText = title;
+            dom.info.desc.innerText = desc;
+            dom.info.category.innerText = category;
+            dom.info.badge.innerText = badge;
+            
+            if(warningMsg) {
+                dom.info.geminiWarning.classList.remove('hidden');
+                dom.info.warningText.innerHTML = `<strong>安全提示：</strong> ${warningMsg}`;
+            } else {
+                dom.info.geminiWarning.classList.add('hidden');
+            }
+        }
+
+        function renderCatalog() {
+            dom.catalogList.innerHTML = '';
+            dom.plannerSelector.innerHTML = '';
+
+            catalogData.forEach(item => {
+                // 左側展廳列表
+                const div = document.createElement('div');
+                div.className = `flex items-center p-3 rounded-xl border cursor-pointer transition-all ${activeCatalogId === item.id ? 'border-teal-500 bg-teal-50 shadow-sm' : 'border-slate-100 hover:border-teal-300 hover:bg-slate-50'}`;
+                div.onclick = () => { loadCatalogItem(item.id); activeCatalogId = item.id; renderCatalog(); };
+                div.innerHTML = `
+                    <div class="w-12 h-12 bg-white rounded-lg border border-slate-100 flex items-center justify-center shrink-0 shadow-sm overflow-hidden text-teal-300">
+                        <i class="fa-solid fa-cube text-xl"></i>
+                    </div>
+                    <div class="ml-3 flex-grow min-w-0">
+                        <h4 class="text-sm font-bold text-slate-800 truncate">${item.name}</h4>
+                        <p class="text-xs text-slate-500 truncate">${item.category}</p>
+                    </div>
+                `;
+                dom.catalogList.appendChild(div);
+
+                // Planner 選擇器清單
+                const btn = document.createElement('button');
+                btn.className = "flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-medium text-slate-700 hover:bg-teal-50 hover:border-teal-300 transition text-left";
+                btn.onclick = () => addFurnitureToLayout(item.id);
+                btn.innerHTML = `<i class="fa-solid fa-plus text-teal-500"></i> <span class="truncate">${item.name}</span>`;
+                dom.plannerSelector.appendChild(btn);
+            });
+        }
+
+        function loadCatalogItem(id) {
+            const item = catalogData.find(i => i.id === id);
+            if(!item) return;
+            activeCatalogId = id;
+            
+            switchView('modelViewer');
+            dom.mvElem.src = item.glbUrl;
+            updateInfoPanel(item.name, item.description, item.category, item.badge);
+            dom.info.mainBtn.style.display = 'block';
+        }
+
+        function addFurnitureToLayout(id) {
+            const item = catalogData.find(i => i.id === id);
+            if(!item) return;
+            currentLayout.push({
+                ...item,
+                x_pct: 40 + Math.random() * 20, // 隨機位置
+                y_pct: 40 + Math.random() * 20
+            });
+            drawBlueprint();
+            showToast(`已加入: ${item.name}`, 'success');
+        }
+
+        function drawBlueprint() {
+            if(!dom.ctx) return;
+            const w = dom.canvas.width; const h = dom.canvas.height;
+            dom.ctx.clearRect(0, 0, w, h);
+            
+            // 畫網格
+            dom.ctx.strokeStyle = '#334155'; dom.ctx.lineWidth = 1;
+            for(let i=0; i<w; i+=40) { dom.ctx.beginPath(); dom.ctx.moveTo(i,0); dom.ctx.lineTo(i,h); dom.ctx.stroke(); }
+            for(let i=0; i<h; i+=40) { dom.ctx.beginPath(); dom.ctx.moveTo(0,i); dom.ctx.lineTo(w,i); dom.ctx.stroke(); }
+            
+            // 計算比例 (預設空間 400x300 cm)
+            const roomW = 400, roomD = 300;
+            const scale = Math.min((w-40)/roomW, (h-40)/roomD);
+            const pxW = roomW * scale, pxH = roomD * scale;
+            const offsetX = (w - pxW)/2, offsetY = (h - pxH)/2;
+            
+            dom.ctx.fillStyle = 'rgba(15, 23, 42, 0.5)';
+            dom.ctx.fillRect(offsetX, offsetY, pxW, pxH);
+            dom.ctx.strokeStyle = '#0d9488'; dom.ctx.lineWidth = 2;
+            dom.ctx.strokeRect(offsetX, offsetY, pxW, pxH);
+
+            currentLayout.forEach((item, index) => {
+                const itemPxW = item.realW * scale;
+                const itemPxH = item.realD * scale;
+                const pxX = offsetX + (item.x_pct / 100) * pxW;
+                const pxY = offsetY + (item.y_pct / 100) * pxH;
+                item._pxX = pxX; item._pxY = pxY; item._pxW = itemPxW; item._pxH = itemPxH;
+
+                dom.ctx.fillStyle = (index === selectedLayoutItemIndex) ? '#2dd4bf' : item.color;
+                dom.ctx.globalAlpha = 0.8;
+                dom.ctx.fillRect(pxX - itemPxW/2, pxY - itemPxH/2, itemPxW, itemPxH);
+                dom.ctx.globalAlpha = 1.0;
+                dom.ctx.strokeStyle = '#ffffff'; dom.ctx.lineWidth = 1.5;
+                dom.ctx.strokeRect(pxX - itemPxW/2, pxY - itemPxH/2, itemPxW, itemPxH);
+                
+                dom.ctx.fillStyle = '#ffffff'; dom.ctx.font = '10px sans-serif'; dom.ctx.textAlign = 'center';
+                dom.ctx.fillText(item.name.substring(0,4), pxX, pxY + 3);
+            });
+        }
+
+        // 藍圖拖曳事件 (支援滑鼠與觸控，並修正縮放偏差)
+        if(dom.canvas) {
+            const handleDragStart = (clientX, clientY) => {
+                const rect = dom.canvas.getBoundingClientRect();
+                const scaleX = dom.canvas.width / rect.width;
+                const scaleY = dom.canvas.height / rect.height;
+                const x = (clientX - rect.left) * scaleX;
+                const y = (clientY - rect.top) * scaleY;
+                
+                // 擴大點擊判定範圍 (從 10 改為 20)，更容易點中
+                selectedLayoutItemIndex = currentLayout.findIndex(item => 
+                    x >= item._pxX - item._pxW/2 - 20 && x <= item._pxX + item._pxW/2 + 20 &&
+                    y >= item._pxY - item._pxH/2 - 20 && y <= item._pxY + item._pxH/2 + 20
+                );
+                
+                if(selectedLayoutItemIndex !== -1) {
+                    isDraggingBlueprint = true;
+                    dragOffsetX = x - currentLayout[selectedLayoutItemIndex]._pxX;
+                    dragOffsetY = y - currentLayout[selectedLayoutItemIndex]._pxY;
+                }
+                drawBlueprint();
+            };
+
+            const handleDragMove = (clientX, clientY) => {
+                if(!isDraggingBlueprint || selectedLayoutItemIndex === null) return;
+                const rect = dom.canvas.getBoundingClientRect();
+                const scaleX = dom.canvas.width / rect.width;
+                const scaleY = dom.canvas.height / rect.height;
+                const x = (clientX - rect.left) * scaleX;
+                const y = (clientY - rect.top) * scaleY;
+                
+                const roomW = 400, roomD = 300;
+                const scale = Math.min((dom.canvas.width-40)/roomW, (dom.canvas.height-40)/roomD);
+                const pxW = roomW * scale, pxH = roomD * scale;
+                const offsetX = (dom.canvas.width - pxW)/2, offsetY = (dom.canvas.height - pxH)/2;
+                
+                const item = currentLayout[selectedLayoutItemIndex];
+                item.x_pct = Math.max(0, Math.min(100, ((x - dragOffsetX - offsetX) / pxW) * 100));
+                item.y_pct = Math.max(0, Math.min(100, ((y - dragOffsetY - offsetY) / pxH) * 100));
+                drawBlueprint();
+            };
+
+            const handleDragEnd = () => {
+                isDraggingBlueprint = false;
+            };
+
+            // 滑鼠事件
+            dom.canvas.addEventListener('mousedown', (e) => handleDragStart(e.clientX, e.clientY));
+            dom.canvas.addEventListener('mousemove', (e) => handleDragMove(e.clientX, e.clientY));
+            window.addEventListener('mouseup', handleDragEnd);
+
+            // 觸控事件
+            dom.canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // 防止拖曳時螢幕跟著捲動
+                handleDragStart(e.touches[0].clientX, e.touches[0].clientY);
+            }, { passive: false });
+            
+            dom.canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault(); 
+                handleDragMove(e.touches[0].clientX, e.touches[0].clientY);
+            }, { passive: false });
+            
+            window.addEventListener('touchend', handleDragEnd);
+        }
+
+        // --- Three.js 初始化區塊 ---
+
+        let procScene, procCamera, procRenderer, procModelGroup;
+        let roomScene, roomCamera, roomRenderer;
+        
+        function initProceduralThreeJS() {
+            const container = document.getElementById('procedural-3d-container');
+            procScene = new THREE.Scene();
+            procCamera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            procCamera.position.set(0, 0, 15);
+            procRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            procRenderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(procRenderer.domElement);
+
+            procScene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dLight.position.set(10, 10, 10); procScene.add(dLight);
+            
+            // 互動控制
+            let isDrag = false, prevM = {x:0, y:0};
+            procRenderer.domElement.addEventListener('mousedown', (e) => { isDrag = true; prevM = {x: e.offsetX, y: e.offsetY}; });
+            procRenderer.domElement.addEventListener('mousemove', (e) => {
+                if(isDrag && procModelGroup) {
+                    procModelGroup.rotation.y += (e.offsetX - prevM.x) * 0.01;
+                    procModelGroup.rotation.x += (e.offsetY - prevM.y) * 0.01;
+                }
+                prevM = {x: e.offsetX, y: e.offsetY};
+            });
+            window.addEventListener('mouseup', () => isDrag = false);
+
+            // 觸控支援
+            procRenderer.domElement.addEventListener('touchstart', (e) => { isDrag = true; prevM = {x: e.touches[0].clientX, y: e.touches[0].clientY}; });
+            procRenderer.domElement.addEventListener('touchmove', (e) => {
+                if(isDrag && procModelGroup) {
+                    procModelGroup.rotation.y += (e.touches[0].clientX - prevM.x) * 0.01;
+                    procModelGroup.rotation.x += (e.touches[0].clientY - prevM.y) * 0.01;
+                }
+                prevM = {x: e.touches[0].clientX, y: e.touches[0].clientY};
+            });
+            window.addEventListener('touchend', () => isDrag = false);
+
+            procModelGroup = new THREE.Group();
+            procScene.add(procModelGroup);
+
+            const animate = () => { 
+                requestAnimationFrame(animate); 
+                if(procModelGroup && !isDrag) {
+                    procModelGroup.rotation.y += 0.005; // 待命或展示狀態時自動微調旋轉
+                }
+                procRenderer.render(procScene, procCamera); 
+            };
+            animate();
+        }
+
+        let roomMeshes = []; // 新增：儲存 3D 空間中的家具網格以便點擊判定
+
+        function initRoomThreeJS() {
+            const container = document.getElementById('room-3d-container');
+            roomScene = new THREE.Scene(); roomScene.background = new THREE.Color(0x0f172a);
+            roomCamera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+            roomCamera.position.set(0, 200, 250); roomCamera.lookAt(0,0,0);
+            
+            roomRenderer = new THREE.WebGLRenderer({ antialias: true });
+            roomRenderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(roomRenderer.domElement);
+            
+            roomScene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(100, 200, 50); roomScene.add(dl);
+            
+            // 地板
+            const gridHelper = new THREE.GridHelper(400, 20, 0x0d9488, 0x334155);
+            roomScene.add(gridHelper);
+
+            // --- 互動控制：包含環視攝影機與推動物件 ---
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+            const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -25); // 對應物件高度 Y=25
+            
+            let isOrbiting = false;
+            let draggedMesh = null;
+            let prevM = {x: 0, y: 0};
+
+            // 統一擷取滑鼠與觸控的座標，轉換為 3D 空間的投影座標 (NDC)
+            const getEventPos = (e) => {
+                const rect = roomRenderer.domElement.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return {
+                    x: ((clientX - rect.left) / rect.width) * 2 - 1,
+                    y: -((clientY - rect.top) / rect.height) * 2 + 1,
+                    cX: clientX,
+                    cY: clientY
+                };
+            };
+
+            const handleDown = (e) => {
+				const pos = getEventPos(e);
+				prevM = { x: pos.cX, y: pos.cY };
+				
+				mouse.x = pos.x; mouse.y = pos.y;
+				raycaster.setFromCamera(mouse, roomCamera);
+				
+				const intersects = raycaster.intersectObjects(roomMeshes);
+				if (intersects.length > 0) {
+					// 抓取模型
+					draggedMesh = intersects[0].object.userData.rootModel || intersects[0].object;
+					
+					// --- 新增：選取物件並顯示刪除按鈕 ---
+					const layoutItem = draggedMesh.userData.layoutItem;
+					// 找出這個物件在 currentLayout 陣列中的位置
+					selectedItemLayoutIndex = currentLayout.findIndex(item => item === layoutItem);
+					// 顯示刪除按鈕
+					document.getElementById('delete-btn-container').style.display = 'block';
+					// -----------------------------------
+
+					// 放大回饋
+					draggedMesh.userData.originalScale = draggedMesh.scale.clone();
+					draggedMesh.scale.multiplyScalar(1.05); 
+				} else {
+					isOrbiting = true;
+					
+					// --- 新增：點擊空白處，取消選取並隱藏按鈕 ---
+					selectedItemLayoutIndex = -1;
+					document.getElementById('delete-btn-container').style.display = 'none';
+					// ------------------------------------------
+				}
+			};
+
+            const handleMove = (e) => {
+                if (!isOrbiting && !draggedMesh) return;
+                const pos = getEventPos(e);
+                
+                if (draggedMesh) {
+                    // 推動家具邏輯
+                    mouse.x = pos.x; mouse.y = pos.y;
+                    raycaster.setFromCamera(mouse, roomCamera);
+                    const target = new THREE.Vector3();
+                    raycaster.ray.intersectPlane(dragPlane, target);
+                    
+                    if (target) {
+                        // 限制在房間範圍內
+                        const x = Math.max(-190, Math.min(190, target.x));
+                        const z = Math.max(-140, Math.min(140, target.z));
+                        draggedMesh.position.x = x;
+                        draggedMesh.position.z = z;
+                        
+                        // 雙向同步：更新 2D 平面圖的數據
+                        if(draggedMesh.userData.layoutItem) {
+                            draggedMesh.userData.layoutItem.x_pct = ((x + 200) / 400) * 100;
+                            draggedMesh.userData.layoutItem.y_pct = ((z + 150) / 300) * 100;
+                            drawBlueprint();
+                        }
+                    }
+                } else if (isOrbiting) {
+                    // 攝影機環視邏輯
+                    const deltaX = (pos.cX - prevM.x) * 0.01;
+                    const deltaY = (pos.cY - prevM.y) * 0.01;
+                    
+                    // 水平環視
+                    const x = roomCamera.position.x;
+                    const z = roomCamera.position.z;
+                    roomCamera.position.x = x * Math.cos(deltaX) + z * Math.sin(deltaX);
+                    roomCamera.position.z = z * Math.cos(deltaX) - x * Math.sin(deltaX);
+                    
+                    // 垂直俯仰
+                    roomCamera.position.y += deltaY * 100;
+                    roomCamera.position.y = Math.max(20, Math.min(350, roomCamera.position.y));
+                    
+                    roomCamera.lookAt(0,0,0);
+                    prevM = { x: pos.cX, y: pos.cY };
+                }
+            };
+
+            const handleUp = () => {
+				if(draggedMesh && draggedMesh.userData.originalScale) {
+					// 修改這裡：恢復成正確的原始比例，而不是寫死的 1,1,1
+					draggedMesh.scale.copy(draggedMesh.userData.originalScale); 
+				}
+				isOrbiting = false;
+				draggedMesh = null;
+			};
+
+            // 綁定滑鼠事件
+            const canvas = roomRenderer.domElement;
+            canvas.addEventListener('mousedown', handleDown);
+            canvas.addEventListener('mousemove', handleMove);
+            window.addEventListener('mouseup', handleUp);
+
+            // 綁定觸控事件
+            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleDown(e); }, { passive: false });
+            canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); }, { passive: false });
+            window.addEventListener('touchend', handleUp);
+
+            const animate = () => { requestAnimationFrame(animate); roomRenderer.render(roomScene, roomCamera); };
+            animate();
+        }
+
+        function renderRoom3D() {
+			// 清除舊家具模型 (支援移除包含子網格的群組)
+			roomScene.children.forEach(child => {
+				if (child.userData.isRoot) {
+					roomScene.remove(child);
+				}
+			});
+			roomMeshes = [];
+			
+			const roomW = 400, roomD = 300;
+			const loader = new THREE.GLTFLoader(); // 建立模型載入器
+			
+			currentLayout.forEach(item => {
+				const px = (item.x_pct / 100) * roomW - roomW/2;
+				const pz = (item.y_pct / 100) * roomD - roomD/2;
+				
+				// 載入真實的 .glb 模型
+				loader.load(item.glbUrl, (gltf) => {
+					const model = gltf.scene;
+					
+					// 設定位置 (假設模型原點在底部，Y 設為 0 或配合場景微調)
+					model.position.set(px, 10, pz); 
+					
+					// 自動計算縮放：根據 item.realW 調整真實模型的大小
+					const box = new THREE.Box3().setFromObject(model);
+					const size = box.getSize(new THREE.Vector3());
+					// 避免除以 0，設定縮放比例
+					const scaleMultiplier = size.x > 0 ? (item.realW / size.x) : 1; 
+					model.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
+					
+					// 綁定資料，以便後續拖曳與點擊判定
+					model.userData.layoutItem = item;
+					model.userData.isRoot = true; // 標記為根節點，方便清理
+					
+					// 由於模型是由多個子物件組成，需將它們全加入碰撞陣列
+					model.traverse((child) => {
+						if (child.isMesh) {
+							child.userData.layoutItem = item;
+							child.userData.rootModel = model; // 讓子物件認得自己的最上層模型
+							roomMeshes.push(child); // 加入射線判定陣列
+						}
+					});
+					
+					roomScene.add(model);
+				}, undefined, (error) => {
+					console.error(`模型 ${item.name} 載入失敗:`, error);
+				});
+			});
+		}
+
+        dom.btnRender3d.onclick = () => {
+            if(currentLayout.length === 0) return showToast("請先添加物件到平面圖中", "error");
+            switchView('room3d');
+            renderRoom3D();
+            updateInfoPanel("3D 空間檢視", "這是根據您左側平面佈置生成的 3D 示意場景。可在畫面上拖曳滑鼠以環視空間。", "空間模擬", "渲染完成");
+            
+            dom.info.btnBackSingle.classList.remove('hidden');
+            dom.info.btnBackSingle.onclick = () => { switchTab('planner'); };
+        };
+
+        const metalMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8, roughness: 0.2, side: THREE.DoubleSide });
+        
+        function buildProceduralModel(type) {
+            procModelGroup.clear();
+            type = type ? type.toLowerCase() : 'other';
+            
+            if(type === 'idle') {
+                // 待機掃描狀態的動態幾何體，避免一進來畫面全黑
+                const geo = new THREE.IcosahedronGeometry(1.5, 1);
+                const mat = new THREE.MeshStandardMaterial({ color: 0x2dd4bf, wireframe: true, transparent: true, opacity: 0.5 });
+                const mesh = new THREE.Mesh(geo, mat);
+                procModelGroup.add(mesh);
+
+            } else if(type === 'scalpel') {
+                // 手術刀
+                const handle = new THREE.Mesh(new THREE.BoxGeometry(0.5, 6, 0.1), metalMat); handle.position.y = -2;
+                const bladeShape = new THREE.Shape(); 
+                bladeShape.moveTo(0,0); bladeShape.lineTo(0.3,0); bladeShape.lineTo(0.3,1.5); 
+                bladeShape.quadraticCurveTo(0.1,2.5,0,3); bladeShape.lineTo(0,0);
+                const blade = new THREE.Mesh(new THREE.ExtrudeGeometry(bladeShape, {depth:0.02, bevelEnabled:false}), metalMat);
+                blade.position.set(-0.15, 1, -0.01);
+                procModelGroup.add(handle, blade);
+
+            } else if (type === 'forceps' || type === '鑷子' || type === '夾子') {
+                // 鑷子
+                const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.15, 6), metalMat); p1.position.x = -0.2; p1.rotation.z = 0.05;
+                const p2 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.15, 6), metalMat); p2.position.x = 0.2; p2.rotation.z = -0.05;
+                const base = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.2), metalMat); base.position.y = -3;
+                procModelGroup.add(p1, p2, base);
+
+            } else if (type === 'scissors' || type === '剪刀') {
+                // 手術剪
+                const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 4, 0.1), metalMat); b1.position.set(-0.2, 1, 0); b1.rotation.z = -0.1;
+                const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 4, 0.1), metalMat); b2.position.set(0.2, 1, 0); b2.rotation.z = 0.1;
+                const pivot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.2), metalMat); pivot.rotation.x = Math.PI/2;
+                const h1 = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.1, 8, 24), metalMat); h1.position.set(-0.8, -2.5, 0);
+                const h2 = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.1, 8, 24), metalMat); h2.position.set(0.8, -2.5, 0);
+                const arm1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.5, 0.1), metalMat); arm1.position.set(-0.4, -1.2, 0); arm1.rotation.z = 0.2;
+                const arm2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.5, 0.1), metalMat); arm2.position.set(0.4, -1.2, 0); arm2.rotation.z = -0.2;
+                procModelGroup.add(b1, b2, pivot, h1, h2, arm1, arm2);
+
+            } else {
+                // 其他未知或通用設備 (產生一個抽象的醫療儀器感結構)
+                const base = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 0.5, 32), metalMat); base.position.y = -2;
+                const body = new THREE.Mesh(new THREE.BoxGeometry(2, 3, 1), new THREE.MeshStandardMaterial({color: 0xffffff, roughness: 0.1}));
+                const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({color: 0x00ff00}));
+                screen.position.set(0, 0.5, 0.51);
+                procModelGroup.add(base, body, screen);
+            }
+            
+            // 重置旋轉並加入一點預設傾斜
+            procModelGroup.rotation.set(0.2, 0.5, 0);
+        }
+
+        // --- Gemini AI 整合區塊 ---
+
+        // 新增：處理文字測試的 API 呼叫
+        async function analyzeTextWithGemini(text) {
+            const prompt = `分析以下文字，判斷它所指的醫療器械。請回傳一個符合 JSON 格式的結果，包含以下欄位：\n` +
+                           `- 'toolType': 必須是 'scalpel', 'forceps', 'scissors', 或 'other' 之一。\n` +
+                           `- 'title': 此器械的簡短繁體中文名稱。\n` +
+                           `- 'description': 簡述其在醫療或手術上的用途。\n` +
+                           `- 'warning': 處理此器械時的安全警告事項。如果不是醫療工具，請在 toolType 填 'other' 並在敘述中說明它看起來像什麼。\n\n` +
+                           `使用者輸入文字：${text}`;
+
+            const payload = {
+                contents: [{
+                    role: "user",
+                    parts: [{ text: prompt }]
+                }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            toolType: { type: "STRING" },
+                            title: { type: "STRING" },
+                            description: { type: "STRING" },
+                            warning: { type: "STRING" }
+                        }
+                    }
+                }
+            };
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+            let delays = [1000, 2000, 4000, 8000, 16000];
+            for (let i = 0; i <= 5; i++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP 錯誤! 狀態碼: ${response.status}`);
+                    
+                    const data = await response.json();
+                    const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    
+                    if (!textContent) throw new Error("無效的 API 回應格式");
+                    return JSON.parse(textContent);
+                    
+                } catch (err) {
+                    console.warn(`API 呼叫失敗，重試次數: ${i+1}`, err);
+                    if (i === 5) throw err;
+                    await new Promise(res => setTimeout(res, delays[i]));
+                }
+            }
+        }
+
+        async function analyzeImageWithGemini(base64Data, mimeType) {
+            const prompt = "分析這張圖片，判斷它是否包含手術或醫療器械。請回傳一個符合 JSON 格式的結果，包含以下欄位：\n" +
+                           "- 'toolType': 必須是 'scalpel', 'forceps', 'scissors', 或 'other' 之一。\n" +
+                           "- 'title': 此器械的簡短繁體中文名稱。\n" +
+                           "- 'description': 簡述其在醫療或手術上的用途。\n" +
+                           "- 'warning': 處理此器械時的安全警告事項。如果不是醫療工具，請在 toolType 填 'other' 並在敘述中說明它看起來像什麼。";
+
+            const payload = {
+                contents: [{
+                    role: "user",
+                    parts: [
+                        { text: prompt },
+                        { inlineData: { mimeType: mimeType, data: base64Data } }
+                    ]
+                }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            toolType: { type: "STRING" },
+                            title: { type: "STRING" },
+                            description: { type: "STRING" },
+                            warning: { type: "STRING" }
+                        }
+                    }
+                }
+            };
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+
+            // 指數型退避重試
+            let delays = [1000, 2000, 4000, 8000, 16000];
+            for (let i = 0; i <= 5; i++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP 錯誤! 狀態碼: ${response.status}`);
+                    
+                    const data = await response.json();
+                    const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    
+                    if (!textContent) throw new Error("無效的 API 回應格式");
+                    return JSON.parse(textContent);
+                    
+                } catch (err) {
+                    console.warn(`API 呼叫失敗，重試次數: ${i+1}`, err);
+                    if (i === 5) throw err;
+                    await new Promise(res => setTimeout(res, delays[i]));
+                }
+            }
+        }
+
+        dom.imageInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if(!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                dom.imagePreview.src = event.target.result;
+                dom.imagePreviewContainer.classList.remove('hidden');
+                dom.loadingOverlay.classList.remove('hidden');
+                switchView('procedural'); // 切換到程序化視圖準備顯示結果
+
+                const base64ImageData = event.target.result.split(',')[1];
+                const mimeType = file.type;
+
+                try {
+                    const result = await analyzeImageWithGemini(base64ImageData, mimeType);
+                    dom.loadingOverlay.classList.add('hidden');
+
+                    if (result) {
+                        // 在展廳尋找是否已經有對應的高精度模型
+                        //const matchedItem = catalogData.find(item => item.id === result.toolType);
+						const matchedItem = catalogData.find(item => item.id.includes(result.toolType));
+
+                        if (matchedItem) {
+                            // 若找到：不切換分頁，直接在右側切換為 Model Viewer 顯示高畫質模型
+                            activeCatalogId = matchedItem.id;
+                            renderCatalog(); // 刷新左側列表的選取狀態
+                            
+                            switchView('modelViewer');
+                            dom.mvElem.src = matchedItem.glbUrl;
+                            
+                            // 覆寫解說面板，結合展廳介紹與 AI 安全提醒
+                            updateInfoPanel(
+                                matchedItem.name + " (AI 辨識匹配)", 
+                                matchedItem.description + "\n\n【AI 即時分析】" + result.description, 
+                                "AI 辨識結果", 
+                                "展廳模型", 
+                                result.warning
+                            );
+                            dom.info.mainBtn.style.display = 'block'; // 允許 AR 投影
+                            showToast(`已從展廳中載入：${matchedItem.name}`, "success");
+                        } else {
+                            // 若找不到對應展廳設備，回退到程序化抽象模型
+                            switchView('procedural');
+                            buildProceduralModel(result.toolType);
+                            updateInfoPanel(
+                                result.title, 
+                                result.description, 
+                                "AI 智能辨識結果", 
+                                "3D 抽象結構生成", 
+                                result.warning
+                            );
+                            dom.info.mainBtn.style.display = 'none';
+                            showToast("展廳無此設備，已生成抽象結構", "info");
+                        }
+                    } else {
+                        throw new Error("無法解析結果");
+                    }
+                } catch (err) {
+                    dom.loadingOverlay.classList.add('hidden');
+                    showToast("辨識過程發生錯誤：" + err.message, "error");
+                    // 即使失敗也生成一個預設模型
+                    buildProceduralModel('other');
+                    updateInfoPanel("辨識失敗", "無法連接 AI 模型或分析失敗，已顯示預設虛擬模型。", "系統錯誤", "離線模式");
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // 新增：綁定文字測試按鈕事件
+        dom.btnTextTest.addEventListener('click', async () => {
+            const text = dom.textInputTest.value.trim();
+            if(!text) return showToast("請輸入測試文字，例如: 手術刀", "error");
+
+            // 清空預覽圖並顯示載入中
+            dom.imagePreview.src = "";
+            dom.imagePreviewContainer.classList.remove('hidden');
+            dom.loadingOverlay.classList.remove('hidden');
+            switchView('procedural');
+
+            try {
+                const result = await analyzeTextWithGemini(text);
+                dom.loadingOverlay.classList.add('hidden');
+
+                if (result) {
+                    //const matchedItem = catalogData.find(item => item.id === result.toolType);
+					const matchedItem = catalogData.find(item => item.id.includes(result.toolType));
+
+                    if (matchedItem) {
+                        // 若找到：不切換分頁，直接在右側切換為 Model Viewer 顯示高畫質模型
+                        activeCatalogId = matchedItem.id;
+                        renderCatalog();
+                        
+                        switchView('modelViewer');
+                        dom.mvElem.src = matchedItem.glbUrl;
+                        
+                        updateInfoPanel(
+                            matchedItem.name + " (文字辨識匹配)", 
+                            matchedItem.description + "\n\n【AI 即時分析】" + result.description, 
+                            "AI 辨識結果", 
+                            "展廳模型", 
+                            result.warning
+                        );
+                        dom.info.mainBtn.style.display = 'block';
+                        showToast(`已從展廳中載入：${matchedItem.name}`, "success");
+                    } else {
+                        switchView('procedural');
+                        buildProceduralModel(result.toolType);
+                        updateInfoPanel(
+                            result.title, 
+                            result.description, 
+                            "AI 智能辨識結果", 
+                            "3D 抽象結構生成", 
+                            result.warning
+                        );
+                        dom.info.mainBtn.style.display = 'none';
+                        showToast("展廳無此設備，已生成抽象結構", "info");
+                    }
+                } else {
+                    throw new Error("無法解析結果");
+                }
+            } catch (err) {
+                dom.loadingOverlay.classList.add('hidden');
+                showToast("辨識過程發生錯誤：" + err.message, "error");
+                buildProceduralModel('other');
+                updateInfoPanel("辨識失敗", "無法連接 AI 模型或分析失敗，已顯示預設虛擬模型。", "系統錯誤", "離線模式");
+            }
+        });
+
+        // --- 綁定事件與初始化 ---
+
+        dom.tabs.catalog.onclick = () => switchTab('catalog');
+        dom.tabs.aiId.onclick = () => switchTab('aiId');
+        dom.tabs.planner.onclick = () => switchTab('planner');
+
+        dom.info.mainBtn.onclick = () => {
+            if(currentMode === 'catalog' && activeCatalogId) {
+                // 啟動 Model Viewer 的 AR
+                dom.mvElem.activateAR();
+            } else {
+                showToast("此模式目前不支援 AR 投影", "info");
+            }
+        };
+
+        window.onload = () => {
+            // 延遲初始化 Three.js 以確保容器尺寸已確定
+            setTimeout(() => {
+                initProceduralThreeJS();
+                initRoomThreeJS();
+                
+                // 註冊視窗縮放事件更新相機與 Canvas 比例
+                window.addEventListener('resize', () => {
+                    if(procCamera && procRenderer) {
+                        const c1 = document.getElementById('procedural-3d-container');
+                        procCamera.aspect = c1.clientWidth / c1.clientHeight;
+                        procCamera.updateProjectionMatrix();
+                        procRenderer.setSize(c1.clientWidth, c1.clientHeight);
+                    }
+                    if(roomCamera && roomRenderer) {
+                        const c2 = document.getElementById('room-3d-container');
+                        roomCamera.aspect = c2.clientWidth / c2.clientHeight;
+                        roomCamera.updateProjectionMatrix();
+                        roomRenderer.setSize(c2.clientWidth, c2.clientHeight);
+                    }
+                    drawBlueprint();
+                });
+            }, 100);
+
+            renderCatalog();
+            switchTab('catalog');
+        };
+    </script>
+</body>
+</html>
