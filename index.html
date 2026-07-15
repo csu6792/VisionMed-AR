@@ -844,10 +844,47 @@
             
             if(type === 'idle') {
                 // 待機掃描狀態的動態幾何體，避免一進來畫面全黑
-                const geo = new THREE.IcosahedronGeometry(1.5, 1);
-                const mat = new THREE.MeshStandardMaterial({ color: 0x2dd4bf, wireframe: true, transparent: true, opacity: 0.5 });
-                const mesh = new THREE.Mesh(geo, mat);
-                procModelGroup.add(mesh);
+                const dnaGroup = new THREE.Group();
+                const numPairs = 16;       // 鹼基對數量
+                const radius = 0.8;        // 螺旋半徑
+                const spacing = 0.35;      // 垂直間距
+                const angleStep = 0.45;    // 每一層旋轉的角度
+                
+                // 設定 DNA 的材質與顏色 (使用你介面的主題色 Teal)
+                const strandMat = new THREE.MeshStandardMaterial({ color: 0x2dd4bf, roughness: 0.2, metalness: 0.6 });
+                const bondMat = new THREE.MeshStandardMaterial({ color: 0x99f6e4, roughness: 0.5, transparent: true, opacity: 0.7 });
+                
+                // 宣告共用的幾何體 (節點球體、連接桿)
+                const sphereGeo = new THREE.SphereGeometry(0.12, 16, 16);
+                const cylinderGeo = new THREE.CylinderGeometry(0.04, 0.04, radius * 2, 8);
+                
+                for (let i = 0; i < numPairs; i++) {
+                    // 計算每一層的高度 (置中) 與 旋轉角度
+                    const y = (i - numPairs / 2) * spacing;
+                    const angle = i * angleStep;
+                    
+                    // 兩側的磷酸骨架節點 (Strands)
+                    const s1 = new THREE.Mesh(sphereGeo, strandMat);
+                    s1.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+                    
+                    const s2 = new THREE.Mesh(sphereGeo, strandMat);
+                    s2.position.set(Math.cos(angle + Math.PI) * radius, y, Math.sin(angle + Math.PI) * radius);
+                    
+                    // 中間相連的氫鍵橫桿 (Bonds)
+                    const bond = new THREE.Mesh(cylinderGeo, bondMat);
+                    bond.position.set(0, y, 0);
+                    // 讓圓柱體躺平並對齊兩側的球體
+                    bond.rotation.z = Math.PI / 2; 
+                    bond.rotation.y = -angle;
+                    
+                    dnaGroup.add(s1, s2, bond);
+                }
+                
+                // 加上一點整體傾斜，讓它旋轉起來視覺效果更好
+                dnaGroup.rotation.z = 0.3;
+                dnaGroup.rotation.x = 0.1;
+                
+                procModelGroup.add(dnaGroup);
 
             } else if(type === 'scalpel') {
                 // 手術刀
