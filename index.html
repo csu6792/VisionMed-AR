@@ -8,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/webxr/VRButton.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -128,7 +129,7 @@
                             <canvas id="blueprint-canvas" width="360" height="260" class="bg-slate-950 rounded-lg shadow-inner cursor-crosshair"></canvas>
                         </div>
                         
-                        <button id="btn-render-3d" class="mt-3 w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all flex items-center justify-center space-x-2">
+                        <button id="btn-render-3d" class="hidden mt-3 w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all flex items-center justify-center space-x-2">
                             <i class="fa-solid fa-cube text-teal-400"></i>
                             <span>進入 3D 手術模擬空間</span>
                         </button>
@@ -160,6 +161,16 @@
                                 ar-scale="fixed" scale="0.2 0.2 0.2" ar-placement="floor" camera-controls auto-rotate 
                                 shadow-intensity="1.5" environment-image="neutral" exposure="1.0">
                             </model-viewer>
+							
+							<div class="absolute bottom-4 left-4 z-40 bg-slate-900/80 backdrop-blur-md text-white p-3 rounded-xl shadow-lg border border-white/10 flex flex-col gap-2">
+								<label for="ar-brightness" class="text-xs font-bold text-slate-300 flex justify-between">
+									<span>💡 模型/AR 亮度</span>
+									<span id="ar-brightness-val">100%</span>
+								</label>
+								<input type="range" id="ar-brightness" min="0.2" max="3" step="0.1" value="1" 
+									   class="w-24 md:w-32 accent-teal-400 cursor-pointer" 
+									   oninput="updateARBrightness(this.value)">
+							</div>
                         </div>
 
                         <!-- 模式 B: Gemini 辨識生成的程序化 3D 結構 -->
@@ -173,15 +184,53 @@
                         <!-- 模式 C: 3D 手術室佈置場景 -->
                         <div id="view-room-3d" class="hidden relative w-full h-full flex items-center justify-center bg-slate-900 rounded-2xl overflow-hidden">
     
+							<video id="ar-camera-feed" autoplay playsinline class="absolute inset-0 w-full h-full object-cover hidden z-0"></video>
+	
 							<div id="room-3d-container" class="w-full h-full"></div>
+							
+							<div class="absolute top-4 left-4 z-50">
+								<button onclick="toggleRoomAR()" id="btn-room-ar" 
+										class="group flex items-center gap-2.5 bg-white/95 hover:bg-white backdrop-blur-xl text-slate-800 px-5 py-3 rounded-2xl shadow-xl shadow-teal-500/20 border border-white/60 transition-all duration-200 hover:scale-105 active:scale-95 font-medium text-sm">
+									
+									<div id="ar-icon" class="w-5 h-5 flex items-center justify-center transition-transform">
+										<i class="fas fa-cube"></i>
+									</div>
+									
+									<span id="ar-text" class="font-semibold">開啟實境 AR</span>
+								</button>
+								
+								<button id="btn-room-vr" onclick="toggleRoomVR()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all">
+									<i class="fas fa-vr-cardboard"></i>
+									<span>進入 VR 空間</span>
+								</button>
+							</div>
+							
 							
 							<div id="delete-btn-container" style="display: none;" class="absolute top-4 right-4 z-50">
 								<button onclick="deleteSelected()" class="bg-red-500/90 hover:bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg transition flex items-center gap-2 backdrop-blur-sm">
 									<i class="fas fa-trash-alt"></i> 刪除選取物件
 								</button>
 							</div>
+							<div class="absolute bottom-12 right-4 flex flex-col gap-2 z-40">
+								<button onclick="zoomScene(-1)" class="w-10 h-10 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full text-white flex items-center justify-center shadow-lg transition border border-white/10" title="放大 (拉近)">
+									<i class="fas fa-plus"></i>
+								</button>
+								<button onclick="zoomScene(1)" class="w-10 h-10 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full text-white flex items-center justify-center shadow-lg transition border border-white/10" title="縮小 (拉遠)">
+									<i class="fas fa-minus"></i>
+								</button>
+							</div>
 							<div class="absolute bottom-2 right-2 text-white/50 text-xs flex items-center gap-1 z-10">
 								<i class="fa-solid fa-hand-pointer"></i> 空間自由檢視
+							</div>
+							
+							<div class="absolute bottom-4 left-4 z-40 bg-slate-900/80 backdrop-blur-md text-white p-3 rounded-xl shadow-lg border border-white/10 flex flex-col gap-2">
+								<label for="room-brightness" class="text-xs font-bold text-slate-300 flex justify-between">
+									<span>💡 空間亮度</span>
+									<span id="room-brightness-val">100%</span>
+								</label>
+								<input type="range" id="room-brightness" min="0.2" max="3" step="0.1" value="1" 
+									   class="w-24 md:w-32 accent-teal-400 cursor-pointer" 
+									   oninput="updateRoomBrightness(this.value)">
 							</div>
 						</div>
                     </div>
@@ -302,6 +351,28 @@
 				realW: 12.5, // 標準鑷子長度約 12.5 公分
 				realD: 0.8,  // 閉合狀態下主體寬度約 0.8 公分
 				color: "#e2e8f0"
+			},
+			{
+				id: "human_skeleton_highres",
+				name: "高精度人體骨骼模型",
+				category: "解剖模型",
+				badge: "全身骨骼",
+				description: "高解析度的全身人體骨骼結構，精確呈現各部位骨架細節，適用於醫學解剖教學與手術室人員佔位模擬。",
+				glbUrl: "human_skeleton.glb", // ⚠️ 請將這裡替換成你實際的 .glb 檔案名稱
+				realW: 45, // 成人骨架肩寬大約 40 ~ 45 公分 (空間佈置時的 X 軸佔用寬度)
+				realD: 25, // 胸腔厚度大約 20 ~ 25 公分 (空間佈置時的 Z 軸佔用深度)
+				color: "#f4f1ea" // 帶有一點溫潤感的骨骼象牙白色調
+			},
+			{
+				id: "human_female_skull",
+				name: "高精度女性顱骨模型",
+				category: "解剖模型", // ⚠️ 保持「手術器械」分類，按鈕才不會被過濾掉！
+				badge: "解剖骨骼",
+				description: "高解析度女性顱骨解剖模型，精細呈現骨骼縫合線、鼻腔、眼眶及下顎骨等細節，適用於神經外科手術模擬與解剖學教學。",
+				glbUrl: "human_female_skull.glb", // ⚠️ 請替換成你實際放在資料夾中的 .glb 檔案名稱
+				realW: 14, // 成人女性顱骨左右寬度大約 14 公分
+				realD: 18, // 成人女性顱骨前後長度大約 18 公分
+				color: "#faf8f5" // 乾淨的象牙骨骼色
 			}
         ];
 		
@@ -324,6 +395,156 @@
 				}
 			}
 		};
+		
+		// --- ▼▼▼ 新增：按鈕縮放場景功能 ▼▼▼ ---
+		window.zoomScene = function(direction) {
+			if (!roomCamera) return; 
+			
+			// 每次點擊縮放的距離
+			const zoomStep = 40; 
+			
+			// translateZ 會沿著攝影機的「視線方向」移動
+			// 傳入負值 (direction=-1) 代表往前推進(放大)，正值 (direction=1) 代表往後退(縮小)
+			roomCamera.translateZ(direction * zoomStep);
+			
+			// 保護機制：避免拉得太近導致攝影機穿透地板 (Y < 0)
+			// 如果低於安全高度，就把攝影機拉回安全高度，並重新對準中心
+			if (roomCamera.position.y < 30) {
+				roomCamera.position.y = 30;
+				roomCamera.lookAt(0, 0, 0); 
+			}
+		};
+		
+		window.updateARBrightness = function(value) {
+			const val = parseFloat(value);
+			
+			const valText = document.getElementById('ar-brightness-val');
+			if(valText) valText.innerText = Math.round(val * 100) + '%';
+			
+			// ⚠️ 這裡的 ID 要改成 'model-viewer' 對應你的 HTML
+			const mv = document.getElementById('model-viewer');
+			if (mv) {
+				mv.setAttribute('exposure', val);
+			}
+		};
+		
+		// --- ▼▼▼ 新增：控制 3D 空間佈置亮度的函數 ▼▼▼ ---
+		window.updateRoomBrightness = function(value) {
+			const val = parseFloat(value);
+			
+			// 更新 UI 文字顯示
+			const valText = document.getElementById('room-brightness-val');
+			if(valText) valText.innerText = Math.round(val * 100) + '%';
+			
+			// 透過我們預設的最佳亮度倍數，乘上拉桿的值
+			if (window.roomAmbientLight) {
+				window.roomAmbientLight.intensity = 1.5 * val; 
+			}
+			if (window.roomHemiLight) {
+				window.roomHemiLight.intensity = 1.2 * val;
+			}
+			if (window.roomDirectionalLight) {
+				window.roomDirectionalLight.intensity = 2.0 * val;
+			}
+		};
+		
+		// --- ▼▼▼ 新增：3D 空間 AR 背景切換邏輯 ▼▼▼ ---
+		window.isRoomAR = false;
+		window.roomCameraStream = null;
+
+		window.toggleRoomAR = async function() {
+    const videoElem = document.getElementById('ar-camera-feed');
+    const btnText = document.querySelector('#btn-room-ar span');
+    const btnIcon = document.querySelector('#btn-room-ar i');
+    
+    if (!window.isRoomAR) {
+        // 開啟 AR
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment' } 
+            });
+            
+            window.roomCameraStream = stream;
+            videoElem.srcObject = stream;
+            videoElem.classList.remove('hidden');
+
+            // AR 模式重要設定
+            if (roomScene) roomScene.background = null;
+            if (roomRenderer) {
+                roomRenderer.setClearColor(0x000000, 0); // 完全透明
+            }
+
+            if (btnText) btnText.innerText = "關閉實境 AR";
+            if (btnIcon) btnIcon.className = "fas fa-cube text-red-300";
+            
+            window.isRoomAR = true;
+            
+            // 切換後重新渲染
+            setTimeout(renderRoom3D, 100);
+            
+        } catch (err) {
+            console.error(err);
+            alert("無法存取相機，請確認權限與 HTTPS 環境");
+        }
+    } else {
+        // 關閉 AR
+        if (window.roomCameraStream) {
+            window.roomCameraStream.getTracks().forEach(track => track.stop());
+            window.roomCameraStream = null;
+        }
+        if (videoElem) {
+            videoElem.classList.add('hidden');
+            videoElem.srcObject = null;
+        }
+
+        if (roomScene) roomScene.background = new THREE.Color(0x0f172a);
+        if (roomRenderer) {
+            roomRenderer.setClearColor(0x000000, 1);
+        }
+
+        if (btnText) btnText.innerText = "開啟實境 AR";
+        if (btnIcon) btnIcon.className = "fas fa-cube";
+        
+        window.isRoomAR = false;
+        
+        setTimeout(renderRoom3D, 100);
+    }
+};
+
+// --- ▼▼▼ 新增：3D 空間 VR 模式切換邏輯 ▼▼▼ ---
+window.toggleRoomVR = function() {
+    // 檢查瀏覽器是否支援 WebXR / VR
+    if ('xr' in navigator) {
+        navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+            if (supported) {
+                // 建立一個隱藏的 VRButton 來觸行動裝置或頭盔的 VR 請求
+                if (typeof VRButton !== 'undefined') {
+                    // 如果尚未建立過，我們臨時在網頁中模擬點擊 VRButton 進入 VR
+                    const tempVrButton = VRButton.createButton(roomRenderer);
+                    tempVrButton.style.display = 'none'; // 保持隱藏，不影響畫面
+                    document.body.appendChild(tempVrButton);
+                    
+                    // 模擬點擊進入 VR 模式
+                    tempVrButton.click();
+                    
+                    // 點擊後移除非必要的暫存按鈕
+                    setTimeout(() => {
+                        tempVrButton.remove();
+                    }, 1000);
+                } else {
+                    alert("VR 模組加載失敗，請確認已引入 VRButton.js 腳本。");
+                }
+            } else {
+                // 如果瀏覽器本身支援 XR API，但裝置（如普通電腦或沒有陀螺儀的手機）不支援 VR
+                alert("您的裝置或瀏覽器不支援 VR 模式！\n建議使用 Meta Quest 等 VR 設備的瀏覽器，或使用帶有陀螺儀的手機搭配 Google Cardboard 進行體驗。");
+            }
+        });
+    } else {
+        // 完全不支援 WebXR 的老舊瀏覽器或非安全連線 (HTTP) 
+        alert("此瀏覽器不支援 WebXR (VR) 功能！\n請確認您的網址開頭為 HTTPS://（安全連線）或為 localhost 本機環境。");
+    }
+};
+
 
         function showToast(msg, type = 'info') {
             const toast = document.getElementById('toast');
@@ -471,6 +692,8 @@
                 y_pct: 40 + Math.random() * 20
             });
             drawBlueprint();
+			
+			renderRoom3D();
             showToast(`已加入: ${item.name}`, 'success');
         }
 
@@ -558,6 +781,7 @@
 
             const handleDragEnd = () => {
                 isDraggingBlueprint = false;
+				renderRoom3D();
             };
 
             // 滑鼠事件
@@ -635,196 +859,248 @@
 
         let roomMeshes = []; // 新增：儲存 3D 空間中的家具網格以便點擊判定
 
-        function initRoomThreeJS() {
-            const container = document.getElementById('room-3d-container');
-            roomScene = new THREE.Scene(); roomScene.background = new THREE.Color(0x0f172a);
-            roomCamera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
-            roomCamera.position.set(0, 200, 250); roomCamera.lookAt(0,0,0);
+function initRoomThreeJS() {
+    const container = document.getElementById('room-3d-container');
+    roomScene = new THREE.Scene(); 
+    roomScene.background = new THREE.Color(0x0f172a);
+    
+    roomCamera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+    roomCamera.position.set(0, 200, 250); 
+    roomCamera.lookAt(0, 0, 0);
+    
+    // 【關鍵修改 1】：關閉 preserveDrawingBuffer 避免 AR 透明底色下的複製人殘影，並開啟抗鋸齒
+    roomRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    roomRenderer.setClearColor(0x000000, 0);
+    roomRenderer.setSize(container.clientWidth, container.clientHeight);
+    roomRenderer.outputEncoding = THREE.sRGBEncoding;
+    roomRenderer.shadowMap.enabled = true; // 開啟陰影，提升立體感
+
+    // 【關鍵修改 2】：啟用 WebXR / VR 渲染支援
+    roomRenderer.xr.enabled = true;
+
+    container.appendChild(roomRenderer.domElement);
+    
+
+    // 光源設定
+    window.roomAmbientLight = new THREE.AmbientLight(0xffffff, 1.5);
+    roomScene.add(window.roomAmbientLight);
+
+    // 半球光 (HemisphereLight)：模擬天花板白光與地板反光的漫射效果
+    window.roomHemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
+    window.roomHemiLight.position.set(0, 200, 0);
+    roomScene.add(window.roomHemiLight);
+
+    // 主直射光 (DirectionalLight)：模擬手術室的強光，打出立體感與陰影
+    window.roomDirectionalLight = new THREE.DirectionalLight(0xffffff, 2.0);
+    window.roomDirectionalLight.position.set(100, 200, 50); 
+    roomScene.add(window.roomDirectionalLight);
+    
+    // --- 互動控制：包含環視攝影機與推動物件 ---
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -25); // 對應物件高度 Y=25
+    
+    let isOrbiting = false;
+    let draggedMesh = null;
+    let prevM = { x: 0, y: 0 };
+
+    // 統一擷取滑鼠與觸控的座標，轉換為 3D 空間的投影座標 (NDC)
+    const getEventPos = (e) => {
+        const rect = roomRenderer.domElement.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+            x: ((clientX - rect.left) / rect.width) * 2 - 1,
+            y: -((clientY - rect.top) / rect.height) * 2 + 1,
+            cX: clientX,
+            cY: clientY
+        };
+    };
+
+    const handleDown = (e) => {
+        const pos = getEventPos(e);
+        prevM = { x: pos.cX, y: pos.cY };
+        
+        mouse.x = pos.x; mouse.y = pos.y;
+        raycaster.setFromCamera(mouse, roomCamera);
+        
+        const intersects = raycaster.intersectObjects(roomMeshes);
+        if (intersects.length > 0) {
+            // 抓取模型
+            draggedMesh = intersects[0].object.userData.rootModel || intersects[0].object;
             
-            roomRenderer = new THREE.WebGLRenderer({ antialias: true });
-            roomRenderer.setSize(container.clientWidth, container.clientHeight);
-            container.appendChild(roomRenderer.domElement);
+            // 選取物件並顯示刪除按鈕
+            const layoutItem = draggedMesh.userData.layoutItem;
+            selectedItemLayoutIndex = currentLayout.findIndex(item => item === layoutItem);
+            document.getElementById('delete-btn-container').style.display = 'block';
+
+            // 放大回饋
+            draggedMesh.userData.originalScale = draggedMesh.scale.clone();
+            draggedMesh.scale.multiplyScalar(1.05); 
+        } else {
+            isOrbiting = true;
+            // 點擊空白處，取消選取並隱藏按鈕
+            selectedItemLayoutIndex = -1;
+            document.getElementById('delete-btn-container').style.display = 'none';
+        }
+    };
+
+    const handleMove = (e) => {
+        if (!isOrbiting && !draggedMesh) return;
+        const pos = getEventPos(e);
+        
+        if (draggedMesh) {
+            // 推動家具邏輯
+            mouse.x = pos.x; mouse.y = pos.y;
+            raycaster.setFromCamera(mouse, roomCamera);
+            const target = new THREE.Vector3();
+            raycaster.ray.intersectPlane(dragPlane, target);
             
-            roomScene.add(new THREE.AmbientLight(0xffffff, 0.5));
-            const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(100, 200, 50); roomScene.add(dl);
-            
-            // 地板
-            const gridHelper = new THREE.GridHelper(400, 20, 0x0d9488, 0x334155);
-            roomScene.add(gridHelper);
-
-            // --- 互動控制：包含環視攝影機與推動物件 ---
-            const raycaster = new THREE.Raycaster();
-            const mouse = new THREE.Vector2();
-            const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -25); // 對應物件高度 Y=25
-            
-            let isOrbiting = false;
-            let draggedMesh = null;
-            let prevM = {x: 0, y: 0};
-
-            // 統一擷取滑鼠與觸控的座標，轉換為 3D 空間的投影座標 (NDC)
-            const getEventPos = (e) => {
-                const rect = roomRenderer.domElement.getBoundingClientRect();
-                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                return {
-                    x: ((clientX - rect.left) / rect.width) * 2 - 1,
-                    y: -((clientY - rect.top) / rect.height) * 2 + 1,
-                    cX: clientX,
-                    cY: clientY
-                };
-            };
-
-            const handleDown = (e) => {
-				const pos = getEventPos(e);
-				prevM = { x: pos.cX, y: pos.cY };
-				
-				mouse.x = pos.x; mouse.y = pos.y;
-				raycaster.setFromCamera(mouse, roomCamera);
-				
-				const intersects = raycaster.intersectObjects(roomMeshes);
-				if (intersects.length > 0) {
-					// 抓取模型
-					draggedMesh = intersects[0].object.userData.rootModel || intersects[0].object;
-					
-					// --- 新增：選取物件並顯示刪除按鈕 ---
-					const layoutItem = draggedMesh.userData.layoutItem;
-					// 找出這個物件在 currentLayout 陣列中的位置
-					selectedItemLayoutIndex = currentLayout.findIndex(item => item === layoutItem);
-					// 顯示刪除按鈕
-					document.getElementById('delete-btn-container').style.display = 'block';
-					// -----------------------------------
-
-					// 放大回饋
-					draggedMesh.userData.originalScale = draggedMesh.scale.clone();
-					draggedMesh.scale.multiplyScalar(1.05); 
-				} else {
-					isOrbiting = true;
-					
-					// --- 新增：點擊空白處，取消選取並隱藏按鈕 ---
-					selectedItemLayoutIndex = -1;
-					document.getElementById('delete-btn-container').style.display = 'none';
-					// ------------------------------------------
-				}
-			};
-
-            const handleMove = (e) => {
-                if (!isOrbiting && !draggedMesh) return;
-                const pos = getEventPos(e);
+            if (target) {
+                // 限制在房間範圍內
+                const x = Math.max(-190, Math.min(190, target.x));
+                const z = Math.max(-140, Math.min(140, target.z));
+                draggedMesh.position.x = x;
+                draggedMesh.position.z = z;
                 
-                if (draggedMesh) {
-                    // 推動家具邏輯
-                    mouse.x = pos.x; mouse.y = pos.y;
-                    raycaster.setFromCamera(mouse, roomCamera);
-                    const target = new THREE.Vector3();
-                    raycaster.ray.intersectPlane(dragPlane, target);
-                    
-                    if (target) {
-                        // 限制在房間範圍內
-                        const x = Math.max(-190, Math.min(190, target.x));
-                        const z = Math.max(-140, Math.min(140, target.z));
-                        draggedMesh.position.x = x;
-                        draggedMesh.position.z = z;
-                        
-                        // 雙向同步：更新 2D 平面圖的數據
-                        if(draggedMesh.userData.layoutItem) {
-                            draggedMesh.userData.layoutItem.x_pct = ((x + 200) / 400) * 100;
-                            draggedMesh.userData.layoutItem.y_pct = ((z + 150) / 300) * 100;
-                            drawBlueprint();
-                        }
-                    }
-                } else if (isOrbiting) {
-                    // 攝影機環視邏輯
-                    const deltaX = (pos.cX - prevM.x) * 0.01;
-                    const deltaY = (pos.cY - prevM.y) * 0.01;
-                    
-                    // 水平環視
-                    const x = roomCamera.position.x;
-                    const z = roomCamera.position.z;
-                    roomCamera.position.x = x * Math.cos(deltaX) + z * Math.sin(deltaX);
-                    roomCamera.position.z = z * Math.cos(deltaX) - x * Math.sin(deltaX);
-                    
-                    // 垂直俯仰
-                    roomCamera.position.y += deltaY * 100;
-                    roomCamera.position.y = Math.max(20, Math.min(350, roomCamera.position.y));
-                    
-                    roomCamera.lookAt(0,0,0);
-                    prevM = { x: pos.cX, y: pos.cY };
+                // 雙向同步：更新 2D 平面圖的數據
+                if(draggedMesh.userData.layoutItem) {
+                    draggedMesh.userData.layoutItem.x_pct = ((x + 200) / 400) * 100;
+                    draggedMesh.userData.layoutItem.y_pct = ((z + 150) / 300) * 100;
+                    drawBlueprint();
                 }
-            };
+            }
+        } else if (isOrbiting) {
+            // 攝影機環視邏輯
+            const deltaX = (pos.cX - prevM.x) * 0.01;
+            const deltaY = (pos.cY - prevM.y) * 0.01;
+            
+            // 水平環視
+            const x = roomCamera.position.x;
+            const z = roomCamera.position.z;
+            roomCamera.position.x = x * Math.cos(deltaX) + z * Math.sin(deltaX);
+            roomCamera.position.z = z * Math.cos(deltaX) - x * Math.sin(deltaX);
+            
+            // 垂直俯仰
+            roomCamera.position.y += deltaY * 100;
+            roomCamera.position.y = Math.max(20, Math.min(350, roomCamera.position.y));
+            
+            roomCamera.lookAt(0,0,0);
+            prevM = { x: pos.cX, y: pos.cY };
+        }
+    };
 
-            const handleUp = () => {
-				if(draggedMesh && draggedMesh.userData.originalScale) {
-					// 修改這裡：恢復成正確的原始比例，而不是寫死的 1,1,1
-					draggedMesh.scale.copy(draggedMesh.userData.originalScale); 
-				}
-				isOrbiting = false;
-				draggedMesh = null;
-			};
-
-            // 綁定滑鼠事件
-            const canvas = roomRenderer.domElement;
-            canvas.addEventListener('mousedown', handleDown);
-            canvas.addEventListener('mousemove', handleMove);
-            window.addEventListener('mouseup', handleUp);
-
-            // 綁定觸控事件
-            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleDown(e); }, { passive: false });
-            canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); }, { passive: false });
-            window.addEventListener('touchend', handleUp);
-
-            const animate = () => { requestAnimationFrame(animate); roomRenderer.render(roomScene, roomCamera); };
-            animate();
+    const handleUp = () => {
+        if(draggedMesh && draggedMesh.userData.originalScale) {
+            // 恢復成正確的原始比例
+            draggedMesh.scale.copy(draggedMesh.userData.originalScale); 
+        }
+        
+        // 【關鍵修改 4】：在開啟 AR 相機實境背景時，放開滑鼠不重新載入整個 renderRoom3D()
+        // 這能解決放開時卡頓/閃爍問題，讓普通模式與 AR 模式都能流暢滑順
+        if (!window.isRoomAR) {
+            renderRoom3D();
         }
 
-        function renderRoom3D() {
-			// 清除舊家具模型 (支援移除包含子網格的群組)
-			roomScene.children.forEach(child => {
-				if (child.userData.isRoot) {
-					roomScene.remove(child);
-				}
-			});
-			roomMeshes = [];
-			
-			const roomW = 400, roomD = 300;
-			const loader = new THREE.GLTFLoader(); // 建立模型載入器
-			
-			currentLayout.forEach(item => {
-				const px = (item.x_pct / 100) * roomW - roomW/2;
-				const pz = (item.y_pct / 100) * roomD - roomD/2;
-				
-				// 載入真實的 .glb 模型
-				loader.load(item.glbUrl, (gltf) => {
-					const model = gltf.scene;
-					
-					// 設定位置 (假設模型原點在底部，Y 設為 0 或配合場景微調)
-					model.position.set(px, 10, pz); 
-					
-					// 自動計算縮放：根據 item.realW 調整真實模型的大小
-					const box = new THREE.Box3().setFromObject(model);
-					const size = box.getSize(new THREE.Vector3());
-					// 避免除以 0，設定縮放比例
-					const scaleMultiplier = size.x > 0 ? (item.realW / size.x) : 1; 
-					model.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
-					
-					// 綁定資料，以便後續拖曳與點擊判定
-					model.userData.layoutItem = item;
-					model.userData.isRoot = true; // 標記為根節點，方便清理
-					
-					// 由於模型是由多個子物件組成，需將它們全加入碰撞陣列
-					model.traverse((child) => {
-						if (child.isMesh) {
-							child.userData.layoutItem = item;
-							child.userData.rootModel = model; // 讓子物件認得自己的最上層模型
-							roomMeshes.push(child); // 加入射線判定陣列
-						}
-					});
-					
-					roomScene.add(model);
-				}, undefined, (error) => {
-					console.error(`模型 ${item.name} 載入失敗:`, error);
-				});
-			});
-		}
+        isOrbiting = false;
+        draggedMesh = null;
+    };
+
+    // 綁定滑鼠事件
+    const canvas = roomRenderer.domElement;
+    canvas.addEventListener('mousedown', handleDown);
+    canvas.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+
+    // 綁定觸控事件
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleDown(e); }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); }, { passive: false });
+    window.addEventListener('touchend', handleUp);
+
+    // 【關鍵修改 5】：動畫渲染迴圈
+    // 1. 在每幀渲染前徹底清除緩衝區 (roomRenderer.clear())
+    // 2. 為了相容 WebXR 規格，必須將 requestAnimationFrame(animate) 改寫成 setAnimationLoop()
+    const animate = () => { 
+        if (roomRenderer && roomScene && roomCamera) {
+            roomRenderer.clear(); 
+            roomRenderer.render(roomScene, roomCamera); 
+        }
+    };
+    roomRenderer.setAnimationLoop(animate);
+}
+
+        let modelCache = new Map(); // 模型快取，避免重複載入
+
+function renderRoom3D() {
+    // === 徹底清除舊模型 ===
+    for (let i = roomScene.children.length - 1; i >= 0; i--) {
+        const child = roomScene.children[i];
+        if (child.userData && child.userData.isRoot) {
+            child.traverse((obj) => {
+                if (obj.isMesh) {
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) {
+                        if (Array.isArray(obj.material)) {
+                            obj.material.forEach(m => m.dispose && m.dispose());
+                        } else if (obj.material.dispose) {
+                            obj.material.dispose();
+                        }
+                    }
+                }
+            });
+            roomScene.remove(child);
+        }
+    }
+    
+    roomMeshes = [];
+    
+    const roomW = 400, roomD = 300;
+    const loader = new THREE.GLTFLoader();
+
+    currentLayout.forEach(item => {
+        const px = (item.x_pct / 100) * roomW - roomW / 2;
+        const pz = (item.y_pct / 100) * roomD - roomD / 2;
+
+        const loadModel = (gltfScene) => {
+            const model = gltfScene.clone();
+
+            model.position.set(px, 10, pz);
+
+            // 自動縮放
+            const box = new THREE.Box3().setFromObject(model);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const scaleMultiplier = (maxDim > 0 ? item.realW / maxDim : 1) * 4.2;
+            model.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
+
+            // 綁定資料
+            model.userData.layoutItem = item;
+            model.userData.isRoot = true;
+
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    child.userData.layoutItem = item;
+                    child.userData.rootModel = model;
+                    roomMeshes.push(child);
+                }
+            });
+
+            roomScene.add(model);
+        };
+
+        // 使用快取
+        if (modelCache.has(item.glbUrl)) {
+            loadModel(modelCache.get(item.glbUrl));
+        } else {
+            loader.load(item.glbUrl, (gltf) => {
+                modelCache.set(item.glbUrl, gltf.scene);
+                loadModel(gltf.scene);
+            }, undefined, (error) => {
+                console.error(`模型載入失敗 ${item.name}:`, error);
+            });
+        }
+    });
+}
 
         dom.btnRender3d.onclick = () => {
             if(currentLayout.length === 0) return showToast("請先添加物件到平面圖中", "error");
