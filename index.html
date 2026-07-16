@@ -511,73 +511,8 @@
 };
 
 
-// --- ▼▼▼ 自置輕量化 VR 按鈕啟動器，不依賴任何外部 CDN ▼▼▼ ---
-const MyVRButton = {
-    createButton(renderer) {
-        const button = document.createElement('button');
-        button.style.padding = '12px 24px';
-        button.style.border = '1px solid #fff';
-        button.style.borderRadius = '8px';
-        button.style.background = 'rgba(15, 23, 42, 0.8)'; // 使用深色背景搭配你的系統
-        button.style.color = '#fff';
-        button.style.font = 'bold 14px sans-serif';
-        button.style.cursor = 'pointer';
-        button.style.transition = 'all 0.2s';
-        button.style.backdropFilter = 'blur(4px)';
-        button.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
-        
-        button.textContent = 'ENTER VR (載入中...)';
-
-        if ('xr' in navigator) {
-            navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
-                if (supported) {
-                    button.textContent = 'ENTER VR';
-                    let currentSession = null;
-
-                    async function onSessionStarted(session) {
-                        session.addEventListener('end', onSessionEnded);
-                        renderer.xr.setSession(session);
-                        button.textContent = 'EXIT VR';
-                        currentSession = session;
-                    }
-
-                    function onSessionEnded() {
-                        currentSession.removeEventListener('end', onSessionEnded);
-                        button.textContent = 'ENTER VR';
-                        currentSession = null;
-                    }
-
-                    button.onclick = () => {
-                        if (currentSession === null) {
-                            // 請求進入 VR 模式，並啟用基礎的地面追蹤功能
-                            const sessionInit = { optionalFeatures: ['local-floor', 'bounded-floor'] };
-                            navigator.xr.requestSession('immersive-vr', sessionInit).then(onSessionStarted).catch(err => {
-                                console.error("無法開啟 VR Session:", err);
-                                alert("開啟 VR 失敗，請確認是否已配戴頭戴式裝置或有正確授權。");
-                            });
-                        } else {
-                            currentSession.end();
-                        }
-                    };
-                } else {
-                    button.textContent = 'VR NOT SUPPORTED';
-                    button.style.opacity = '0.5';
-                    button.style.cursor = 'not-allowed';
-                }
-            });
-        } else {
-            button.textContent = 'WEBXR NOT SUPPORTED';
-            button.style.opacity = '0.5';
-            button.style.cursor = 'not-allowed';
-        }
-
-        return button;
-    }
-};
-// --- ▲▲▲ 自置啟動器結束 ▲▲▲ ---
-
 // --- ▼▼▼ 新增：3D 空間 VR 模式切換邏輯 ▼▼▼ ---
-window.toggleRoomVR = function() {
+window.toggleRoomVR = async function() {
     // 1. 檢查是否為 iOS 裝置 (iPhone / iPad)
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
@@ -588,31 +523,51 @@ window.toggleRoomVR = function() {
 
     // 2. 核心 VR 檢查與啟動
     if ('xr' in navigator) {
-        navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+        try {
+            const supported = await navigator.xr.isSessionSupported('immersive-vr');
             if (supported) {
-                if (roomRenderer) {
-                    // 建立自訂的隱藏 VR 按鈕，並模擬觸發點擊來開啟 VR
-                    const tempVrButton = MyVRButton.createButton(roomRenderer);
-                    tempVrButton.style.display = 'none'; 
-                    document.body.appendChild(tempVrButton);
+                if (!roomRenderer) {
+                    alert("3D 渲染器尚未初始化！");
+                    return;
+                }
+
+                // 檢查目前是否已經在 VR 狀態中
+                const currentSession = roomRenderer.xr.getSession();
+                if (currentSession) {
+                    // 如果已經在 VR，則結束 Session（退出 VR）
+                    await currentSession.end();
+                } else {
+                    // 核心關鍵：直接由當前 onclick 使用者點擊事件發起請求，100% 不會被瀏覽器阻擋！
+                    const sessionInit = { optionalFeatures: ['local-floor', 'bounded-floor'] };
+                    const session = await navigator.xr.requestSession('immersive-vr', sessionInit);
                     
-                    // 模擬點擊進入 VR 模式
-                    tempVrButton.click();
+                    // 將 WebXR Session 綁定到 Three.js 渲染器
+                    await roomRenderer.xr.setSession(session);
                     
-                    // 點擊後移除非必要的暫存按鈕
-                    setTimeout(() => {
-                        tempVrButton.remove();
-                    }, 1000);
+                    // 動態變更按鈕外觀為「離開 VR」
+                    const vrBtn = document.getElementById('btn-room-vr');
+                    if (vrBtn) {
+                        vrBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i> <span>離開 VR 空間</span>';
+                    }
+
+                    // 監聽 VR 結束事件（例如使用者在頭盔內按退出，或是打叉離開）
+                    session.addEventListener('end', () => {
+                        if (vrBtn) {
+                            vrBtn.innerHTML = '<i class="fas fa-vr-cardboard"></i> <span>進入 VR 空間</span>';
+                        }
+                    });
                 }
             } else {
                 alert("您的裝置或瀏覽器不支援 VR 模式！\n建議使用 Meta Quest 等 VR 設備的瀏覽器，或使用帶有陀螺儀的手機搭配 VR 眼鏡進行體驗。");
             }
-        });
+        } catch (err) {
+            console.error("WebXR 請求失敗:", err);
+            alert("進入 VR 失敗！\n1. 請確認網址開頭為 HTTPS://（安全加密連線）或是 localhost。\n2. 請確認已連接頭戴式 VR 設備。\n\n詳細錯誤: " + err.message);
+        }
     } else {
         alert("此瀏覽器不支援 WebXR (VR) 功能！\n請確認您的網址開頭為 HTTPS://（安全連線）或為 localhost 本機環境。");
     }
 };
-
 
         function showToast(msg, type = 'info') {
             const toast = document.getElementById('toast');
